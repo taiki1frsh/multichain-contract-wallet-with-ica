@@ -17,7 +17,5 @@ pub struct AccountData {
     pub remote_balance: Vec<Coin>,
 }
 
-pub const SUB_ACCOUNTS: Item<Vec<Addr>> = Item::new("sub_accounts");
-
-pub const ADMIN: Item<AdminList> = Item::new("config");
+pub const ADMIN: Item<AdminList> = Item::new("admin");
 pub const ACCOUNTS: Map<&str, AccountData> = Map::new("accounts");

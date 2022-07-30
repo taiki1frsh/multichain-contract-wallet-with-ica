@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::state::AccountData;
 
 use cw1_whitelist::state::AdminList;
+use cw20::{Cw20Coin, Cw20ReceiveMsg};
 
 /// This needs no info. Owner of the contract is whoever signed the InstantiateMsg.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -18,8 +19,8 @@ pub struct InstantiateMsg {
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     /// Changes the admin
-    UpdateAdmins {
-        admins: Vec<String>,
+    AddAdmins {
+        new_admins: Vec<String>,
     },
     SendMsgs {
         channel_id: String,
@@ -39,6 +40,9 @@ pub enum ExecuteMsg {
         /// port and handled by a different module.
         /// It should connect to the same chain as the reflect_channel_id does
         transfer_channel_id: String,
+    },
+    ExecuteCosmosMsg {
+        msgs: Vec<CosmosMsg<Empty>>,
     },
 }
 

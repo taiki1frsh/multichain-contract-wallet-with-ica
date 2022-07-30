@@ -1,22 +1,30 @@
 use crate::error::ContractError;
 use cosmwasm_std::{
     entry_point, to_binary, Addr, Api, CosmosMsg, Deps, DepsMut, Env, IbcMsg, MessageInfo, Order,
-    QueryResponse, Response, StdError, StdResult, WasmMsg,
+    QueryResponse, Response, StdError, StdResult, WasmMsg, wasm_execute, SubMsg,
 };
 use cw1_whitelist::{
-    contract::execute_update_admins,
-    // ContractError,
     state::AdminList,
+    contract::execute_execute,
 };
 
+use cw_utils::nonpayable;
 use simple_ica::PacketMsg;
+
+use cw20::{Cw20Coin, Cw20ReceiveMsg};
+// use cw20_base::{
+//     contract::{
+//     execute_burn, execute_mint, execute_send, execute_transfer, query_balance, query_token_info,
+//     },
+//     state::{MinterData, TokenInfo, TOKEN_INFO},
+// };
 
 use crate::ibc::PACKET_LIFETIME;
 use crate::msg::{
     AccountInfo, AccountResponse, AdminResponse, ExecuteMsg, InstantiateMsg, ListAccountsResponse,
     QueryMsg,
 };
-use crate::state::{ACCOUNTS, ADMIN, SUB_ACCOUNTS};
+use crate::state::{ACCOUNTS, ADMIN};
 
 #[entry_point]
 pub fn instantiate(
@@ -50,7 +58,7 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::UpdateAdmins { admins } => execute_add_admins(deps, env, info, admins),
+        ExecuteMsg::AddAdmins { new_admins } => execute_add_admins(deps, env, info, new_admins),
         ExecuteMsg::SendMsgs { channel_id, msgs } => {
             execute_send_msgs(deps, env, info, channel_id, msgs)
         }
@@ -61,8 +69,28 @@ pub fn execute(
             reflect_channel_id,
             transfer_channel_id,
         } => execute_send_funds(deps, env, info, reflect_channel_id, transfer_channel_id),
-        //ExecuteMsg::AddSubAccounts{sub_accounts } => execute_add_sub_accounts(deps, info, sub_accounts),
+        ExecuteMsg::ExecuteCosmosMsg { msgs } => execute_cosmos_msgs(deps, env, info, msgs),
     }
+}
+
+pub fn execute_cosmos_msgs(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    msgs: Vec<CosmosMsg>,
+) -> Result<Response, ContractError> {
+    // auth check
+    let admin = ADMIN.load(deps.storage)?;
+    if !admin.is_admin(&info.sender) {
+        return Err(StdError::generic_err("Only admin may send messages").into());
+    }
+
+    let wl_msg = cw1_whitelist::msg::ExecuteMsg::Execute { msgs };
+    let wasm_msg = wasm_execute(env.contract.address, &wl_msg, vec![])?;
+
+    Ok(Response::new()
+        .add_message(wasm_msg)
+        .add_attribute("action", "execute_cosmos_msg"))
 }
 
 pub fn execute_add_admins(
@@ -127,7 +155,7 @@ pub fn execute_check_remote_balance(
 ) -> Result<Response, ContractError> {
     // auth check
     let admin = ADMIN.load(deps.storage)?;
-    if !can_execute(deps.as_ref(), &info.sender.to_string()).is_ok() {
+    if !admin.is_admin(&info.sender) {
         return Err(StdError::generic_err("Only admin may send messages").into());
     }
 
@@ -190,12 +218,6 @@ pub fn execute_send_funds(
     Ok(res)
 }
 
-fn can_execute(deps: Deps, sender: &str) -> StdResult<bool> {
-    let admin = ADMIN.load(deps.storage)?;
-    let can = admin.is_admin(&sender);
-    Ok(can)
-}
-
 #[entry_point]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<QueryResponse> {
     match msg {
@@ -231,7 +253,7 @@ fn query_admins(deps: Deps) -> StdResult<AdminResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use cosmwasm_std::{testing::{mock_dependencies, mock_env, mock_info, mock_dependencies_with_balance}, coins, BankMsg, Coin, Uint128, from_slice};
 
     const CREATOR: &str = "creator";
     const SUB_ADMIN: &str = "sub_admin";
@@ -261,8 +283,46 @@ mod tests {
         let info = mock_info(CREATOR, &[]);
         let _ = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
 
-        let exepected_admins = vec![CREATOR ,SUB_ADMIN];
+        let exepected_admins = vec![CREATOR, SUB_ADMIN];
         let admin = query_admins(deps.as_ref()).unwrap();
         assert_eq!(exepected_admins, admin.admins);
     }
+
+    #[test]
+    fn test_execute_cosmos_msg() {
+        let funds = Coin{
+            amount: Uint128::new(123456789),
+            denom: "uatom".into(),
+        };
+        let mut deps = mock_dependencies_with_balance(&[funds.clone()]);
+
+        let msg = InstantiateMsg {
+            admins: vec![SUB_ADMIN.to_string()],
+            mutable: true,
+        };
+
+        let mut info = mock_info(CREATOR, &[]);
+        let _ = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
+
+        let cosmos_msg = vec![BankMsg::Send {
+            to_address: SUB_ADMIN.into(),
+            amount: vec![funds.clone()],
+        }
+        .into()];
+        info = mock_info(CREATOR, &[funds.clone()]);
+
+        let res = execute_cosmos_msgs(deps.as_mut(), mock_env(), info, cosmos_msg.clone());
+        let wl_msg =  cw1_whitelist::msg::ExecuteMsg::Execute { msgs: cosmos_msg};
+        let expt_msg: Vec<WasmMsg> = vec![WasmMsg::Execute {
+            contract_addr: "cosmos2contract".into(),
+            msg: to_binary(&wl_msg).unwrap(),
+            funds: vec![],
+        }]
+        .into();
+        assert_eq!(
+            res.unwrap().messages,
+            expt_msg.into_iter().map(SubMsg::new).collect::<Vec<_>>(),
+        );
+    }
+
 }
