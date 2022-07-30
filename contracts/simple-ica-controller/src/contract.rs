@@ -107,12 +107,9 @@ pub fn execute_add_admins(
         )));
     }
 
-    // let new_addrs: Vec<_> = new_admins.iter().map(|a| deps.api.addr_validate(a)).collect::<StdResult<_>>()?;
-    // admin.admins.extend(new_addrs);
-    for new_addr in new_admins.iter() {
-        let addr = deps.api.addr_validate(&new_addr)?;
-        admin.admins.push(addr);
-    }
+    let new_addrs: Vec<_> = new_admins.iter().map(|a| deps.api.addr_validate(a)).collect::<StdResult<_>>()?;
+    admin.admins.extend(new_addrs);
+
     ADMIN.save(deps.storage, &admin)?;
 
     Ok(Response::new().add_attribute("action", "handle_update_admin"))
