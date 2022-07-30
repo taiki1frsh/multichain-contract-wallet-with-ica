@@ -1,4 +1,12 @@
-# CosmWasm IBC Demo
+# Simple CosmWasm contract wallet with the feature of ICA and 1 of n multisig
+
+These codes is hugely from the repository of the Ethan Frey's [cw-ibc-demo](https://github.com/confio/cw-ibc-demo).
+
+### Motivation
+
+- To avoid huge amount of money by managing kinda 1 of n multisig enabled contract
+- To simply implement the ICA features with more useful upgradability
+- To easily extend the feature of Account Abstraction
 
 _Example IBC enabled contracts along with full stack integration tests_
 
