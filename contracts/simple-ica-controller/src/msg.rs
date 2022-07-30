@@ -4,9 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::state::AccountData;
 
-use cw1_whitelist::state::AdminList;
-use cw20::{Cw20Coin, Cw20ReceiveMsg};
-
 /// This needs no info. Owner of the contract is whoever signed the InstantiateMsg.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -32,6 +29,7 @@ pub enum ExecuteMsg {
     },
     CheckRemoteBalance {
         channel_id: String,
+        callback: bool,
     },
     /// If you sent funds to this contract, it will attempt to ibc transfer them
     /// to the account on the remote side of this channel.

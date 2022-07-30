@@ -53,9 +53,10 @@ pub fn execute(
         ExecuteMsg::SendMsgs { channel_id, msgs } => {
             execute_send_msgs(deps, env, info, channel_id, msgs)
         }
-        ExecuteMsg::CheckRemoteBalance { channel_id } => {
-            execute_check_remote_balance(deps, env, info, channel_id)
-        }
+        ExecuteMsg::CheckRemoteBalance {
+            channel_id,
+            callback,
+        } => execute_check_remote_balance(deps, env, info, channel_id, callback),
         ExecuteMsg::SendFunds {
             reflect_channel_id,
             transfer_channel_id,
@@ -168,6 +169,7 @@ pub fn execute_check_remote_balance(
     env: Env,
     info: MessageInfo,
     channel_id: String,
+    callback: bool,
 ) -> Result<Response, ContractError> {
     // auth check
     let admin = ADMIN.load(deps.storage)?;
@@ -179,7 +181,7 @@ pub fn execute_check_remote_balance(
     ACCOUNTS.load(deps.storage, &channel_id)?;
 
     // construct a packet to send
-    let packet = PacketMsg::Balances {};
+    let packet = PacketMsg::Balances { callback };
     let msg = IbcMsg::SendPacket {
         channel_id,
         data: to_binary(&packet)?,
@@ -272,7 +274,7 @@ mod tests {
     use cosmwasm_std::{
         coins, from_slice,
         testing::{mock_dependencies, mock_dependencies_with_balance, mock_env, mock_info},
-        BankMsg, Coin, Uint128,
+        BankMsg, Coin, SubMsg, Uint128, WasmMsg,
     };
 
     const CREATOR: &str = "creator";

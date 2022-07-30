@@ -1,4 +1,4 @@
-use cosmwasm_std::{from_slice, to_binary, Binary, Coin, CosmosMsg};
+use cosmwasm_std::{from_slice, to_binary, Binary, Coin, CosmosMsg, Empty};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub enum PacketMsg {
     Dispatch { msgs: Vec<CosmosMsg> },
     WhoAmI {},
-    Balances {},
+    Balances {callback: bool},
 }
 
 /// This is a generic ICS acknowledgement format.
@@ -76,4 +76,5 @@ pub struct WhoAmIResponse {
 pub struct BalancesResponse {
     pub account: String,
     pub balances: Vec<Coin>,
+    pub execute_callback: bool,
 }

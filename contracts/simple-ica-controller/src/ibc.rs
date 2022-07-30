@@ -1,12 +1,15 @@
 use cosmwasm_std::{
-    entry_point, from_slice, to_binary, DepsMut, Env, Ibc3ChannelOpenResponse, IbcBasicResponse,
-    IbcChannelCloseMsg, IbcChannelConnectMsg, IbcChannelOpenMsg, IbcMsg, IbcPacketAckMsg,
-    IbcPacketReceiveMsg, IbcPacketTimeoutMsg, IbcReceiveResponse, StdResult,
+    entry_point, from_slice, to_binary, BankMsg, CosmosMsg, DepsMut, Env, Ibc3ChannelOpenResponse,
+    IbcBasicResponse, IbcChannelCloseMsg, IbcChannelConnectMsg, IbcChannelOpenMsg, IbcMsg,
+    IbcPacketAckMsg, IbcPacketReceiveMsg, IbcPacketTimeoutMsg, IbcReceiveResponse, MessageInfo,
+    StdResult,
 };
 
 use simple_ica::{check_order, check_version, BalancesResponse, PacketMsg, StdAck, WhoAmIResponse};
 
+use crate::contract::{execute, execute_cosmos_msgs};
 use crate::error::ContractError;
+use crate::msg::ExecuteMsg;
 use crate::state::{AccountData, ACCOUNTS};
 
 // TODO: make configurable?
@@ -103,7 +106,7 @@ pub fn ibc_packet_ack(
     match packet {
         PacketMsg::Dispatch { .. } => acknowledge_dispatch(deps, caller, res),
         PacketMsg::WhoAmI {} => acknowledge_who_am_i(deps, caller, res),
-        PacketMsg::Balances {} => acknowledge_balances(deps, env, caller, res),
+        PacketMsg::Balances { .. } => acknowledge_balances(deps, env, caller, res),
     }
 }
 
@@ -159,7 +162,11 @@ fn acknowledge_balances(
     ack: StdAck,
 ) -> Result<IbcBasicResponse, ContractError> {
     // ignore errors (but mention in log)
-    let BalancesResponse { account, balances } = match ack {
+    let BalancesResponse {
+        account,
+        balances,
+        execute_callback,
+    } = match ack {
         StdAck::Result(res) => from_slice(&res)?,
         StdAck::Error(e) => {
             return Ok(IbcBasicResponse::new()
@@ -178,11 +185,25 @@ fn acknowledge_balances(
             Ok(AccountData {
                 last_update_time: env.block.time,
                 remote_addr: Some(account),
-                remote_balance: balances,
+                remote_balance: balances.clone(),
             })
         }
         None => Err(ContractError::UnregisteredChannel(caller.clone())),
     })?;
+
+    // simple callback fn
+    if execute_callback {
+        // this msg is just irrelevant on this implementation
+        let msgs = vec![CosmosMsg::Bank(BankMsg::Send {
+            to_address: env.contract.address.clone().into(),
+            amount: balances.clone(),
+        })];
+        let info = MessageInfo {
+            sender: env.contract.address.clone(),
+            funds: vec![],
+        };
+        let _res = execute_cosmos_msgs(deps, env, info, msgs)?;
+    }
 
     Ok(IbcBasicResponse::new().add_attribute("action", "acknowledge_balances"))
 }

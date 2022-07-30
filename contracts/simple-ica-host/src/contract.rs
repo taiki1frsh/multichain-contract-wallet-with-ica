@@ -3,13 +3,16 @@ use cosmwasm_std::{
     Env, Event, Ibc3ChannelOpenResponse, IbcBasicResponse, IbcChannelCloseMsg,
     IbcChannelConnectMsg, IbcChannelOpenMsg, IbcChannelOpenResponse, IbcPacketAckMsg,
     IbcPacketReceiveMsg, IbcPacketTimeoutMsg, IbcReceiveResponse, MessageInfo, Order,
-    QueryResponse, Reply, Response, StdResult, SubMsg, WasmMsg,
+    QueryResponse, Reply, Response, StdResult, SubMsg, Uint128, WasmMsg,
 };
+
 use cw_utils::parse_reply_instantiate_data;
 use simple_ica::{
     check_order, check_version, BalancesResponse, DispatchResponse, PacketMsg, StdAck,
     WhoAmIResponse, IBC_APP_VERSION,
 };
+// when I import below, it says recompile.
+// use simple_ica_controller::msg::ExecuteMsg;
 
 use crate::error::ContractError;
 use crate::msg::{
@@ -19,6 +22,7 @@ use crate::state::{Config, ACCOUNTS, CONFIG, PENDING, RESULTS};
 
 pub const RECEIVE_DISPATCH_ID: u64 = 1234;
 pub const INIT_CALLBACK_ID: u64 = 7890;
+pub const ENOUGH_FUND: Uint128 = Uint128::new(123456789);
 
 #[entry_point]
 pub fn instantiate(
@@ -204,7 +208,7 @@ pub fn reply_init_callback(deps: DepsMut, reply: Reply) -> Result<Response, Cont
 /// of execution. We just return ok if we dispatched, error if we failed to dispatch
 pub fn ibc_packet_receive(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     msg: IbcPacketReceiveMsg,
 ) -> Result<IbcReceiveResponse, ContractError> {
     let packet = msg.packet;
@@ -214,7 +218,7 @@ pub fn ibc_packet_receive(
     match msg {
         PacketMsg::Dispatch { msgs } => receive_dispatch(deps, caller, msgs),
         PacketMsg::WhoAmI {} => receive_who_am_i(deps, caller),
-        PacketMsg::Balances {} => receive_balances(deps, caller),
+        PacketMsg::Balances { callback } => receive_balances(deps, env, caller, callback),
     }
 }
 
@@ -232,12 +236,26 @@ fn receive_who_am_i(deps: DepsMut, caller: String) -> Result<IbcReceiveResponse,
 }
 
 // processes PacketMsg::Balances variant
-fn receive_balances(deps: DepsMut, caller: String) -> Result<IbcReceiveResponse, ContractError> {
+fn receive_balances(
+    deps: DepsMut,
+    env: Env,
+    caller: String,
+    callback: bool,
+) -> Result<IbcReceiveResponse, ContractError> {
     let account = ACCOUNTS.load(deps.storage, &caller)?;
     let balances = deps.querier.query_all_balances(&account)?;
+
+    // make a condition to trigger a callback fn on the controller contract
+    let mut execute_callback = false;
+    if callback && balances[0].amount < ENOUGH_FUND {
+        execute_callback = true;
+    }
+
     let response = BalancesResponse {
         account: account.into(),
         balances,
+        // insert the bool val to decide to execute callback fn or not
+        execute_callback: execute_callback,
     };
     let acknowledgement = StdAck::success(&response);
     // and we are golden
