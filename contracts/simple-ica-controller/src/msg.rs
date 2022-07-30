@@ -22,6 +22,9 @@ pub enum ExecuteMsg {
     AddAdmins {
         new_admins: Vec<String>,
     },
+    DeleteAdmins {
+        deleting_admins: Vec<String>,
+    },
     SendMsgs {
         channel_id: String,
         // Note: we don't handle custom messages on remote chains
