@@ -1,7 +1,14 @@
+use crate::error::ContractError;
 use cosmwasm_std::{
-    entry_point, to_binary, CosmosMsg, Deps, DepsMut, Env, IbcMsg, MessageInfo, Order,
-    QueryResponse, Response, StdError, StdResult,
+    entry_point, to_binary, Addr, Api, CosmosMsg, Deps, DepsMut, Env, IbcMsg, MessageInfo, Order,
+    QueryResponse, Response, StdError, StdResult, WasmMsg,
 };
+use cw1_whitelist::{
+    contract::execute_update_admins,
+    // ContractError,
+    state::AdminList,
+};
+
 use simple_ica::PacketMsg;
 
 use crate::ibc::PACKET_LIFETIME;
@@ -9,26 +16,41 @@ use crate::msg::{
     AccountInfo, AccountResponse, AdminResponse, ExecuteMsg, InstantiateMsg, ListAccountsResponse,
     QueryMsg,
 };
-use crate::state::{Config, ACCOUNTS, CONFIG};
+use crate::state::{ACCOUNTS, ADMIN, SUB_ACCOUNTS};
 
 #[entry_point]
 pub fn instantiate(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    _msg: InstantiateMsg,
+    msg: InstantiateMsg,
 ) -> StdResult<Response> {
     // we store the reflect_id for creating accounts later
-    let cfg = Config { admin: info.sender };
-    CONFIG.save(deps.storage, &cfg)?;
+    let mut adminaccs = map_validate(deps.api, &&msg.admins)?;
+    // let sender = deps.api.addr_validate(&info.sender)?;
+    adminaccs.insert(0, info.sender.clone());
+    let admin = AdminList {
+        admins: adminaccs,
+        mutable: msg.mutable,
+    };
+    // let accs = AdminAccounts { admin:  admin};
+    ADMIN.save(deps.storage, &admin)?;
 
     Ok(Response::new().add_attribute("action", "instantiate"))
 }
+pub fn map_validate(api: &dyn Api, admins: &[String]) -> StdResult<Vec<Addr>> {
+    admins.iter().map(|addr| api.addr_validate(addr)).collect()
+}
 
 #[entry_point]
-pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
+pub fn execute(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    msg: ExecuteMsg,
+) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::UpdateAdmin { admin } => execute_update_admin(deps, info, admin),
+        ExecuteMsg::UpdateAdmins { admins } => execute_add_admins(deps, env, info, admins),
         ExecuteMsg::SendMsgs { channel_id, msgs } => {
             execute_send_msgs(deps, env, info, channel_id, msgs)
         }
@@ -39,25 +61,33 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             reflect_channel_id,
             transfer_channel_id,
         } => execute_send_funds(deps, env, info, reflect_channel_id, transfer_channel_id),
+        //ExecuteMsg::AddSubAccounts{sub_accounts } => execute_add_sub_accounts(deps, info, sub_accounts),
     }
 }
 
-pub fn execute_update_admin(
+pub fn execute_add_admins(
     deps: DepsMut,
+    _env: Env,
     info: MessageInfo,
-    new_admin: String,
-) -> StdResult<Response> {
+    new_admins: Vec<String>,
+) -> Result<Response, ContractError> {
     // auth check
-    let mut cfg = CONFIG.load(deps.storage)?;
-    if info.sender != cfg.admin {
-        return Err(StdError::generic_err("Only admin may set new admin"));
+    let mut admin = ADMIN.load(deps.storage)?;
+    if !admin.is_admin(&info.sender.to_string()) {
+        return Err(ContractError::Std(StdError::generic_err(
+            "Only admin may send messages",
+        )));
     }
-    cfg.admin = deps.api.addr_validate(&new_admin)?;
-    CONFIG.save(deps.storage, &cfg)?;
 
-    Ok(Response::new()
-        .add_attribute("action", "handle_update_admin")
-        .add_attribute("new_admin", cfg.admin))
+    // let new_addrs: Vec<_> = new_admins.iter().map(|a| deps.api.addr_validate(a)).collect::<StdResult<_>>()?;
+    // admin.admins.extend(new_addrs);
+    for new_addr in new_admins.iter() {
+        let addr = deps.api.addr_validate(&new_addr)?;
+        admin.admins.push(addr);
+    }
+    ADMIN.save(deps.storage, &admin)?;
+
+    Ok(Response::new().add_attribute("action", "handle_update_admin"))
 }
 
 pub fn execute_send_msgs(
@@ -66,11 +96,11 @@ pub fn execute_send_msgs(
     info: MessageInfo,
     channel_id: String,
     msgs: Vec<CosmosMsg>,
-) -> StdResult<Response> {
+) -> Result<Response, ContractError> {
     // auth check
-    let cfg = CONFIG.load(deps.storage)?;
-    if info.sender != cfg.admin {
-        return Err(StdError::generic_err("Only admin may send messages"));
+    let admin = ADMIN.load(deps.storage)?;
+    if !admin.is_admin(&info.sender) {
+        return Err(StdError::generic_err("Only admin may send messages").into());
     }
     // ensure the channel exists (not found if not registered)
     ACCOUNTS.load(deps.storage, &channel_id)?;
@@ -94,12 +124,13 @@ pub fn execute_check_remote_balance(
     env: Env,
     info: MessageInfo,
     channel_id: String,
-) -> StdResult<Response> {
+) -> Result<Response, ContractError> {
     // auth check
-    let cfg = CONFIG.load(deps.storage)?;
-    if info.sender != cfg.admin {
-        return Err(StdError::generic_err("Only admin may send messages"));
+    let admin = ADMIN.load(deps.storage)?;
+    if !can_execute(deps.as_ref(), &info.sender.to_string()).is_ok() {
+        return Err(StdError::generic_err("Only admin may send messages").into());
     }
+
     // ensure the channel exists (not found if not registered)
     ACCOUNTS.load(deps.storage, &channel_id)?;
 
@@ -123,32 +154,26 @@ pub fn execute_send_funds(
     mut info: MessageInfo,
     reflect_channel_id: String,
     transfer_channel_id: String,
-) -> StdResult<Response> {
+) -> Result<Response, ContractError> {
     // intentionally no auth check
 
     // require some funds
     let amount = match info.funds.pop() {
         Some(coin) => coin,
         None => {
-            return Err(StdError::generic_err(
-                "you must send the coins you wish to ibc transfer",
-            ))
+            return Err(ContractError::EmptyFund {});
         }
     };
     // if there are any more coins, reject the message
     if !info.funds.is_empty() {
-        return Err(StdError::generic_err("you can only ibc transfer one coin"));
+        return Err(ContractError::TooManyCoins { coins: info.funds });
     }
 
     // load remote account
     let data = ACCOUNTS.load(deps.storage, &reflect_channel_id)?;
     let remote_addr = match data.remote_addr {
         Some(addr) => addr,
-        None => {
-            return Err(StdError::generic_err(
-                "We don't have the remote address for this channel",
-            ))
-        }
+        None => return Err(ContractError::UnregisteredChannel(reflect_channel_id)),
     };
 
     // construct a packet to send
@@ -165,10 +190,16 @@ pub fn execute_send_funds(
     Ok(res)
 }
 
+fn can_execute(deps: Deps, sender: &str) -> StdResult<bool> {
+    let admin = ADMIN.load(deps.storage)?;
+    let can = admin.is_admin(&sender);
+    Ok(can)
+}
+
 #[entry_point]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<QueryResponse> {
     match msg {
-        QueryMsg::Admin {} => to_binary(&query_admin(deps)?),
+        QueryMsg::Admins {} => to_binary(&query_admins(deps)?),
         QueryMsg::Account { channel_id } => to_binary(&query_account(deps, channel_id)?),
         QueryMsg::ListAccounts {} => to_binary(&query_list_accounts(deps)?),
     }
@@ -190,10 +221,10 @@ fn query_list_accounts(deps: Deps) -> StdResult<ListAccountsResponse> {
     Ok(ListAccountsResponse { accounts })
 }
 
-fn query_admin(deps: Deps) -> StdResult<AdminResponse> {
-    let Config { admin } = CONFIG.load(deps.storage)?;
+fn query_admins(deps: Deps) -> StdResult<AdminResponse> {
+    let AdminList { admins, mutable } = ADMIN.load(deps.storage)?;
     Ok(AdminResponse {
-        admin: admin.into(),
+        admins: admins.into_iter().map(|a| a.into()).collect(),
     })
 }
 
@@ -203,16 +234,35 @@ mod tests {
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
 
     const CREATOR: &str = "creator";
+    const SUB_ADMIN: &str = "sub_admin";
 
     #[test]
     fn instantiate_works() {
         let mut deps = mock_dependencies();
-        let msg = InstantiateMsg {};
+        let msg = InstantiateMsg {
+            admins: vec![SUB_ADMIN.to_string()],
+            mutable: true,
+        };
         let info = mock_info(CREATOR, &[]);
         let res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
         assert_eq!(0, res.messages.len());
 
-        let admin = query_admin(deps.as_ref()).unwrap();
-        assert_eq!(CREATOR, admin.admin.as_str());
+        let admin = query_admins(deps.as_ref()).unwrap();
+        assert_eq!(CREATOR, admin.admins[0]);
+    }
+
+    #[test]
+    fn test_query_admins() {
+        let mut deps = mock_dependencies();
+        let msg = InstantiateMsg {
+            admins: vec![SUB_ADMIN.to_string()],
+            mutable: true,
+        };
+        let info = mock_info(CREATOR, &[]);
+        let _ = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
+
+        let exepected_admins = vec![CREATOR ,SUB_ADMIN];
+        let admin = query_admins(deps.as_ref()).unwrap();
+        assert_eq!(exepected_admins, admin.admins);
     }
 }

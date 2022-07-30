@@ -1,12 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{Addr, Coin, Timestamp};
+use cw1_whitelist::state::AdminList;
 use cw_storage_plus::{Item, Map};
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct Config {
-    pub admin: Addr,
-}
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
 pub struct AccountData {
@@ -21,5 +17,7 @@ pub struct AccountData {
     pub remote_balance: Vec<Coin>,
 }
 
-pub const CONFIG: Item<Config> = Item::new("config");
+pub const SUB_ACCOUNTS: Item<Vec<Addr>> = Item::new("sub_accounts");
+
+pub const ADMIN: Item<AdminList> = Item::new("config");
 pub const ACCOUNTS: Map<&str, AccountData> = Map::new("accounts");

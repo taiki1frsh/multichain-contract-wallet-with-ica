@@ -4,17 +4,22 @@ use serde::{Deserialize, Serialize};
 
 use crate::state::AccountData;
 
+use cw1_whitelist::state::AdminList;
+
 /// This needs no info. Owner of the contract is whoever signed the InstantiateMsg.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub struct InstantiateMsg {}
+pub struct InstantiateMsg {
+    pub admins: Vec<String>,
+    pub mutable: bool,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     /// Changes the admin
-    UpdateAdmin {
-        admin: String,
+    UpdateAdmins {
+        admins: Vec<String>,
     },
     SendMsgs {
         channel_id: String,
@@ -41,7 +46,7 @@ pub enum ExecuteMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     // Returns current admin
-    Admin {},
+    Admins {},
     // Shows all open accounts (incl. remote info)
     ListAccounts {},
     // Get account for one channel
@@ -50,7 +55,7 @@ pub enum QueryMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct AdminResponse {
-    pub admin: String,
+    pub admins: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
