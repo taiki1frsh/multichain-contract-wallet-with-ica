@@ -1,6 +1,6 @@
 use crate::error::ContractError;
 use cosmwasm_std::{
-    entry_point, to_binary, wasm_execute, Addr, Api, CosmosMsg, Deps, DepsMut, Env, IbcMsg,
+    entry_point, to_binary, Addr, Api, CosmosMsg, Deps, DepsMut, Env, IbcMsg,
     MessageInfo, Order, QueryResponse, Response, StdError, StdResult,
 };
 use cw1_whitelist::state::AdminList;
@@ -67,7 +67,7 @@ pub fn execute(
 
 pub fn execute_cosmos_msgs(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     msgs: Vec<CosmosMsg>,
 ) -> Result<Response, ContractError> {
@@ -77,11 +77,8 @@ pub fn execute_cosmos_msgs(
         return Err(StdError::generic_err("Only admin may send messages").into());
     }
 
-    let wl_msg = cw1_whitelist::msg::ExecuteMsg::Execute { msgs };
-    let wasm_msg = wasm_execute(env.contract.address, &wl_msg, vec![])?;
-
     Ok(Response::new()
-        .add_message(wasm_msg)
+        .add_messages(msgs)
         .add_attribute("action", "execute_cosmos_msg"))
 }
 
@@ -266,7 +263,7 @@ fn query_list_accounts(deps: Deps) -> StdResult<ListAccountsResponse> {
 }
 
 fn query_admins(deps: Deps) -> StdResult<AdminResponse> {
-    let AdminList { admins, mutable } = ADMIN.load(deps.storage)?;
+    let AdminList { admins,mutable: _} = ADMIN.load(deps.storage)?;
     Ok(AdminResponse {
         admins: admins.into_iter().map(|a| a.into()).collect(),
     })

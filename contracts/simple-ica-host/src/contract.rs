@@ -238,7 +238,7 @@ fn receive_who_am_i(deps: DepsMut, caller: String) -> Result<IbcReceiveResponse,
 // processes PacketMsg::Balances variant
 fn receive_balances(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     caller: String,
     callback: bool,
 ) -> Result<IbcReceiveResponse, ContractError> {
