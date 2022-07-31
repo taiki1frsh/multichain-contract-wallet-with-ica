@@ -1,12 +1,20 @@
 # Simple CosmWasm contract wallet with the feature of ICA and 1 of n multisig
 
-These codes is hugely from the repository of the Ethan Frey's [cw-ibc-demo](https://github.com/confio/cw-ibc-demo).
+*These codes is hugely from the repository of the Ethan Frey's [cw-ibc-demo](https://github.com/confio/cw-ibc-demo).*
 
+**One contract address on the controller chain behave like an ICA with the support of the normal msg and 1 of n multisig-like feature.**
 ### Motivation
 
 - To avoid huge amount of money by managing kinda 1 of n multisig enabled contract
-- To simply implement the ICA features with more useful upgradability
+- And simpler management of 1 of n multisig-like feature
+- To simply implement the ICA features with more useful upgradability (arguably)
 - To easily extend the feature of Account Abstraction
+
+More features which can be added:
+
+- Updating admin addresses requires more than half of the current admins keys’s signature
+- Batch tx execution for saving gas
+- More user-friendly change of the main account by contract migration to the other controller contract for the escape, or whatever you want
 
 _Example IBC enabled contracts along with full stack integration tests_
 
