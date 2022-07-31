@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{Addr, Coin, Timestamp};
+use cosmwasm_std::{Coin, Timestamp};
 use cw1_whitelist::state::AdminList;
 use cw_storage_plus::{Item, Map};
 

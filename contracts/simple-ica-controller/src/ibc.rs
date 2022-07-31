@@ -7,9 +7,8 @@ use cosmwasm_std::{
 
 use simple_ica::{check_order, check_version, BalancesResponse, PacketMsg, StdAck, WhoAmIResponse};
 
-use crate::contract::{execute, execute_cosmos_msgs};
+use crate::contract::execute_cosmos_msgs;
 use crate::error::ContractError;
-use crate::msg::ExecuteMsg;
 use crate::state::{AccountData, ACCOUNTS};
 
 // TODO: make configurable?

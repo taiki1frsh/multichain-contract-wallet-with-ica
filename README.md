@@ -9,12 +9,51 @@
 - And simpler management of 1 of n multisig-like feature
 - To simply implement the ICA features with more useful upgradability (arguably)
 - To easily extend the feature of Account Abstraction
+- Possible solution for callback function in the contract with IBC by using ack process for it
 
 More features which can be added:
 
 - Updating admin addresses requires more than half of the current admins keys’s signature
 - Batch tx execution for saving gas
 - More user-friendly change of the main account by contract migration to the other controller contract for the escape, or whatever you want
+
+#### Callback logic
+
+What I wanted to realise is actually very simple.  
+In the ack packet msg, insert the `classback: bool` for the assertion whether to get callback.
+```rust
+pub enum PacketMsg {
+    ..,
+    ..,
+    Balances { callback: bool }, // bool whether to get callback
+}
+```
+
+This value is defined here:
+```rust
+pub enum ExecuteMsg {
+    ..,
+    CheckRemoteBalance {
+        channel_id: String,
+        callback: bool,
+    },
+    ..,
+}
+```
+
+`CheckRemoteBalance` message does query the account information of the defined channel's address and update the `AccountData` by recering those data via ack response.   
+What if I insert the sufficient data to execute the msg in the controller contract when the ack response returns from the host contract?
+like this:
+```rust
+pub struct BalancesResponse {
+    pub account: String,
+    pub balances: Vec<Coin>,
+    pub execute_callback: bool, // boolean value after the additional condition for callback
+    // pub msg: ExecuteMsg::{RandomMsg}, <- the message object to be triggered as a call back fn 
+}
+```
+
+For now, I didn't implement `msg` like data in the response as the message for a callback fn, but if the current implementation works as intended, there would be no problem with it, I expect.
 
 _Example IBC enabled contracts along with full stack integration tests_
 
