@@ -201,7 +201,11 @@ pub fn execute_send_funds(
     reflect_channel_id: String,
     transfer_channel_id: String,
 ) -> Result<Response, ContractError> {
-    // intentionally no auth check
+    // auth check
+    let admin = ADMIN.load(deps.storage)?;
+    if !admin.is_admin(&info.sender) {
+        return Err(StdError::generic_err("Only admin may send messages").into());
+    }
 
     // require some funds
     let amount = match info.funds.pop() {
@@ -272,7 +276,6 @@ fn query_admins(deps: Deps) -> StdResult<AdminResponse> {
 mod tests {
     use super::*;
     use cosmwasm_std::{
-        coins, from_slice,
         testing::{mock_dependencies, mock_dependencies_with_balance, mock_env, mock_info},
         BankMsg, Coin, SubMsg, Uint128, WasmMsg,
     };
